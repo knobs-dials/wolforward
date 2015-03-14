@@ -1,11 +1,5 @@
 #!/usr/bin/python
-''' A WOL relay server.   (Also a local-broadcast WOL sender script)
-
-    The point of the relay server is that it simplifies internet-to-home WOL, and for multiple wakers:
-    - you can send unicast WOL packets to the modem,
-    - the modem port-forwards it to a specific host running this relay server,
-    - this service will broadcast all WOL packets it receives.
-'''
+''' Takes all WOL packets, broadcasts locally. '''
 
 import os
 import sys
@@ -17,8 +11,8 @@ import re
 import syslog
 import datetime
 
-ourname = os.path.basename( sys.argv[0] )
 try:
+    ourname = os.path.basename( sys.argv[0] )
     import setproctitle
     setproctitle.setproctitle( ourname )    
 except ImportError:
@@ -31,6 +25,7 @@ stop_now = False # global because of threading
 
 
 def log(logstring,flush=True):
+    # to syslog or stderr
     if forkoff:
         syslog.syslog(logstring)
     else:
@@ -52,7 +47,7 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
         
         ratelimit_sec is the amount of seconds to wait before looking for *any* next WOL packet to forward,
          as a simple means of (outgoing) rate limiting - for peace of mind.
-        If you expect to handle a *lot* of WOL traffic you can set this to 0.0,
+        If you expect to handle a *lot* of WOL traffic you can set this near 0.0,
          and tell me about any problems you find this script causing :)
     """
     global stop_now
@@ -124,15 +119,15 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
 
 
 def packet_data_for(mac,passcode=''):
-    ''' Gives the bytestring to fill a packet with,
-        given a MAC as a string (will be stripped of dashes, colons and such)
-              and the optional password (as a bytestring).
+    ''' Returns WOL packet data (as a bytestring),
+          given a MAC as a string   (robust to dashes, colons and such)
+          and the optional password (as a bytestring).
     '''
-    mac=re.sub(r'[^0-9A-Za-z]','',mac)
+    mac = re.sub(r'[^0-9A-Za-z]','',mac)
     if len(mac)!=12:
         raise ValueError('%r does not look like a valid MAC address'%mac)
     # Make data in hex form (because it's easier to make this way), then turn into bytestring
-    hex_data = 'FF'*6              # sync bytes
+    hex_data  = 'FF'*6              # sync bytes
     hex_data += mac*16 + passcode  # I vaguely remember having seen 26 copies.
     packet_data = hex_data.decode('hex_codec')
     return packet_data
@@ -150,10 +145,9 @@ def send_wol_packets(mac, target='<broadcast>', ports=(7,9), howmany=40, unicast
         
         You can set a regular IP and unicast=True to send a routable WOL packet.
     """
-    
     #Remove all but hex so that we're robust to MACs with separator characters
-    mac=re.sub(r'[^0-9A-Za-z]','',mac)
-    if len(mac)!=12:
+    mac = re.sub(r'[^0-9A-Za-z]','',mac)
+    if len(mac) != 12:
         raise ValueError('%r does not look like a valid MAC address'%mac)
     
     packet_data = packet_data_for(mac)
@@ -208,15 +202,15 @@ def main():
     global stop_now,forkoff,verbose,threaded
     
     #defaults
-    ports = [7,9]
-    target='<broadcast>'
+    ports  = [7,9]
+    target = '<broadcast>'
     # client defaults
     act_as_client      = False
     client_mac         = None
     client_unicast     = False
     client_send_amount = 40    
     # server defaults
-    listenon=''
+    listenon = ''
     
     
     
@@ -312,15 +306,15 @@ def main():
 
     #port should be int or list of ints
     if type(ports) in (tuple,list) and len(ports)==1: # length-one list becomes the integer it (hopefully) contains
-        ports=ports[0]
+        ports = ports[0]
 
     
     if type(ports) not in (tuple,list): # Single port, not threading
-        threaded=False        
+        threaded = False        
         udp_relay_server(bindto=listenon, port=ports,target=target)
 
     else: # Multiple ports requested, creating thread for each.
-        threaded=True
+        threaded = True
         import threading
 
         fired_threads=[]
@@ -334,14 +328,14 @@ def main():
         while len(fired_threads)>0:           
             try:
                 for th in fired_threads:
-                    th.join(0.1)
+                    th.join(0.2)
                     if not th.is_alive():
                         fired_threads.remove(th)
             except KeyboardInterrupt:
                 log( "    Ctrl-C received, waiting for threads to finish... " )
-                stop_now=True
+                stop_now = True
         log("Exiting.") 
-    sys.exit(0) 
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
