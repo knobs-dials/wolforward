@@ -1,0 +1,347 @@
+#!/usr/bin/python
+''' A WOL relay server.   (Also a local-broadcast WOL sender script)
+
+    The point of the relay server is that it simplifies internet-to-home WOL, and for multiple wakers:
+    - you can send unicast WOL packets to the modem,
+    - the modem port-forwards it to a specific host running this relay server,
+    - this service will broadcast all WOL packets it receives.
+'''
+
+import os
+import sys
+import socket
+import time
+import getopt
+import struct
+import re
+import syslog
+import datetime
+
+ourname = os.path.basename( sys.argv[0] )
+try:
+    import setproctitle
+    setproctitle.setproctitle( ourname )    
+except ImportError:
+    pass
+
+verbose  = False
+forkoff  = False
+threaded = False
+stop_now = False # global because of threading
+
+
+def log(logstring,flush=True):
+    if forkoff:
+        syslog.syslog(logstring)
+    else:
+        logstring = '%s - %s\n'%(datetime.datetime.now().ctime(), logstring)
+        sys.stderr.write(logstring)
+        if flush:
+            sys.stderr.flush()
+            
+
+def udp_relay_server(bindto='', port=9, target='<broadcast>',
+                     max_packets=50, within_time_sec=1.5, ratelimit_sec=0.01):
+    """ Receives UDP packets on a specific port, broadcasts their data in a new packet
+        to a target address (defaults to '<broadcast>', which means python determines the broadcast address).
+        
+        Since we are effectively defeating TTL here, we can easily cause an infinite self-flood
+         by reacting to our own packets.
+        We try to avoid that by imposing a maximum amount of packets per source address, with the last few seconds.
+         (This includes ourself - will initially feedback, but will stop it)
+        
+        ratelimit_sec is the amount of seconds to wait before looking for *any* next WOL packet to forward,
+         as a simple means of (outgoing) rate limiting - for peace of mind.
+        If you expect to handle a *lot* of WOL traffic you can set this to 0.0,
+         and tell me about any problems you find this script causing :)
+    """
+    global stop_now
+    try:
+        recv_sock = socket.socket( socket.AF_INET, socket.SOCK_DGRAM ) # UDP
+        try:
+            recv_sock.bind( (bindto,port) )
+        except Exception as e:
+            log( "[WOLrelay-port%d] Port %d in use, or no permission? -- %s"%(port,port,str(e)) )
+            return
+
+        bcast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        bcast_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        self_ip = socket.gethostbyname(socket.gethostname())
+        log( "[WOLrelay-port%d] We are %s, listening to %s:%s, will broadcast to %s"%(
+            port,self_ip,
+            bindto,port,
+            target,
+        ) )
+
+        recent_packets = {} # list of source->lasttimes
+
+        recv_sock.settimeout(0.2)
+
+        #i=0
+        while not stop_now: # primarily for threading case        
+            try:
+                data, addr = recv_sock.recvfrom( 200 )
+            except socket.timeout:
+                #print  "[%s] wait longer..."%port
+                continue
+
+            sender_ip,sender_port = addr
+
+            now = time.time()
+            if sender_ip not in recent_packets:
+                recent_packets[sender_ip] = [now]
+            else:
+                recent_packets[sender_ip].append(now)
+
+            #remove items more than within_time_sec ago
+            current_timelist = filter( lambda tm: tm+within_time_sec>now, recent_packets[sender_ip] )
+            recent_packets[sender_ip] = current_timelist
+            #
+            if len(current_timelist) > max_packets:
+                log( "[WOLrelay-port%d] more than %d packets from %s in %.1f sec -- ignoring this packet"%(port, max_packets,sender_ip,within_time_sec))
+            else:
+                t=data.find('\xff\xff\xff\xff\xff\xff')
+                if t==-1:
+                    log( "[WOLrelay-port%d] Not a WOL packet?"%port )
+                else:
+                    mac = data[t+6:t+12].encode('hex_codec')
+                    mac = ':'.join(list(mac[i:i+2].upper()  for i in range(0,len(mac),2)))
+
+                log( "[WOLrelay-port%d] Broadcasting WOL packet for %s, received from %s, to %s:%s"%(port,mac, sender_ip, target,port) )
+                bcast_sock.sendto(data, (target, port))
+
+            time.sleep( ratelimit_sec )
+            
+        #if threaded:
+        #    print "\n[WOLrelay-port%d] stopping thread"%port
+            
+    except KeyboardInterrupt:
+        if threaded:
+            #print "Relaying KeyboardInterrupt to main thread"    #probably rarely needed
+            import thread # make one appear in the main thread instead (am not entirely sure what cases this is for)
+            thread.interrupt_main()
+
+
+def packet_data_for(mac,passcode=''):
+    ''' Gives the bytestring to fill a packet with,
+        given a MAC as a string (will be stripped of dashes, colons and such)
+              and the optional password (as a bytestring).
+    '''
+    mac=re.sub(r'[^0-9A-Za-z]','',mac)
+    if len(mac)!=12:
+        raise ValueError('%r does not look like a valid MAC address'%mac)
+    # Make data in hex form (because it's easier to make this way), then turn into bytestring
+    hex_data = 'FF'*6              # sync bytes
+    hex_data += mac*16 + passcode  # I vaguely remember having seen 26 copies.
+    packet_data = hex_data.decode('hex_codec')
+    return packet_data
+
+
+
+def send_wol_packets(mac, target='<broadcast>', ports=(7,9), howmany=40, unicast=False):
+    """ Sends a Wake-on-LAN packet with the given MAC.
+        Port can be an integer, or list of integers,  e.g. 7 or [7,9]
+        
+        By default broadcasts on the (or rather, the first?) local subnet.
+        ('<broadcast>' refers to INADDR_BROADCAST, 255.255.255.255)
+        
+        You can set and other broadcast address
+        
+        You can set a regular IP and unicast=True to send a routable WOL packet.
+    """
+    
+    #Remove all but hex so that we're robust to MACs with separator characters
+    mac=re.sub(r'[^0-9A-Za-z]','',mac)
+    if len(mac)!=12:
+        raise ValueError('%r does not look like a valid MAC address'%mac)
+    
+    packet_data = packet_data_for(mac)
+    
+    # Use low-level socket interface to broadcast the result via UDP
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if not unicast:
+        print( "Broadcast to %s"%target )
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    else:
+        print( "Unicast to %s"%target )
+    if type(ports) is int:
+        ports=[ports]
+    #print 'MAC:            %s'%mac
+    #print 'Data in hex:    '+repr(data)
+    #print 'Packet data:    '+repr(packetdata)
+    #print `packet_data`
+    for port in ports: 
+        print( 'Sending %d WOL packets for MAC %s to port %d'%(howmany, mac, port) )
+        for dummy in xrange(howmany):
+            sys.stdout.write('.')
+            sys.stdout.flush()
+            sock.sendto(packet_data, (target, port))
+            #sock.sendto(packet_data, ('192.168.1.255', port))
+        print( ' done.\n' )
+
+
+
+################################################################################################
+def usage():
+    print( """
+UDP/IP Wake on Lan utility
+   -h        print this help, exit
+   -v        be more verbose
+
+Use as client:     %s -m MAC [options]
+   -m MAC    MAC address of target                  - required.  We'll ignore any separator characters in it
+   -t IP     IP to send to                          - act as unicast; without this we default to local broadcast
+   -p ports  port(s) to send to (comma-separated)   - default: -p 7,9
+   -a        amount of packets to send              - default: 40
+
+Use as relay server:  %s [options] pidfile
+   -p ports  port(s) to listen to, comma-separated  e.g.  -p 9  or  -p 7,9,0    default: 7,9
+   -l IP     listen/bind address                    e.g.  -l 192.168.1.1        default: 0.0.0.0
+   -t IP     broadcast target address               e.g.  -t 192.168.1.255      default: halfway clever
+   -f        daemon mode (fork off)
+"""%(os.path.basename(sys.argv[0]),os.path.basename(sys.argv[0])))
+
+    
+def main():
+    ''' Invoked as a script '''
+    global stop_now,forkoff,verbose,threaded
+    
+    #defaults
+    ports = [7,9]
+    target='<broadcast>'
+    # client defaults
+    act_as_client      = False
+    client_mac         = None
+    client_unicast     = False
+    client_send_amount = 40    
+    # server defaults
+    listenon=''
+    
+    
+    
+    ### Argument parsing and obvious-problem checking ###
+    try:
+        optlist, args = getopt.getopt(sys.argv[1:], 'hfvp:b:l:m:ua:t:')
+    except getopt.GetoptError as err:
+        print( str(err) ) # will print something like "option -a not recognized"
+        usage()
+        sys.exit(2)
+    for o, a in optlist:
+        if o == "-v":
+            verbose = True
+        elif o == "-p":
+            ports=list(int(e,10)  for e in a.split(','))
+
+        #server related options
+        elif o == "-f":
+            forkoff=True
+        elif o == "-b":
+            target=a
+        elif o == "-l":
+            listenon=a
+        elif o == "-h":
+            usage()
+            sys.exit(0)
+            
+        elif o == "-m":
+            act_as_client = True
+            client_mac = a
+        elif o == "-u":
+            act_as_client = True
+            client_unicast = True
+        elif o == "-a":
+            act_as_client = True
+            client_send_amount = int(a)
+
+
+    if act_as_client:
+        try:
+            send_wol_packets(client_mac, target=target, ports=ports, howmany=client_send_amount, unicast=client_unicast)
+        except ValueError, e:
+            print e
+            sys.exit(-1)
+        return
+    
+    if len(args)<1:
+        print( "\nError: Need more arguments:\n   at least -m when used as a client,\n   at least pidfile when used as a server\n" )
+        usage()
+        sys.exit(1)
+
+    pidfilename = args[0]
+    pidfilename = os.path.realpath(pidfilename)
+    try:
+        pidfile = open(pidfilename,'w')
+    except Exception as e:
+        print( "PIDfile %s not writable (%s)"%(pidfilename,str(e)) )
+        sys.exit(1)
+
+
+    ### double-fork if required ###
+    if forkoff:
+        try: 
+            pid = os.fork() 
+            if pid > 0:
+                sys.exit(0) # exit first parent
+
+        except OSError as e: 
+            sys.stderr.write( "fork failed: %d (%s)" % (e.errno, e.strerror) )
+            sys.exit(1)
+
+        # decouple from parent env
+        os.chdir("/") # don't occupy the cwd we started in 
+        os.setsid()   # dissociate from initially controlling terminal
+        os.umask(0)   # just to set it to a known value
+
+        # do second fork to make sure we can't accidentally acquire a controlling terminal
+        try: 
+            pid = os.fork() 
+            if pid > 0:
+                sys.exit(0) # exit second parent
+        except OSError as e: 
+            sys.stderr.write( "second fork failed: %d (%s)" % (e.errno, e.strerror) )
+            sys.exit(1) 
+
+    ### write pidfile ###
+    daemonpid = os.getpid()
+    pidfile.write('%s\n'%daemonpid)
+    pidfile.close()
+    
+
+    ### Start service ###
+
+    #port should be int or list of ints
+    if type(ports) in (tuple,list) and len(ports)==1: # length-one list becomes the integer it (hopefully) contains
+        ports=ports[0]
+
+    
+    if type(ports) not in (tuple,list): # Single port, not threading
+        threaded=False        
+        udp_relay_server(bindto=listenon, port=ports,target=target)
+
+    else: # Multiple ports requested, creating thread for each.
+        threaded=True
+        import threading
+
+        fired_threads=[]
+        for port in ports:
+            #print "Firing off relay server for port %d"%port
+            thr = threading.Thread(target=udp_relay_server,
+                                   kwargs={'bindto':listenon, 'port':port, 'target':target})
+            thr.start()
+            fired_threads.append( thr )
+                        
+        while len(fired_threads)>0:           
+            try:
+                for th in fired_threads:
+                    th.join(0.1)
+                    if not th.is_alive():
+                        fired_threads.remove(th)
+            except KeyboardInterrupt:
+                log( "    Ctrl-C received, waiting for threads to finish... " )
+                stop_now=True
+        log("Exiting.") 
+    sys.exit(0) 
+
+if __name__ == "__main__":
+    main()
