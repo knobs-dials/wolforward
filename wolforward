@@ -62,9 +62,8 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
         bcast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         bcast_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        self_ip = socket.gethostbyname(socket.gethostname())
-        log( "[WOLrelay-port%d] We are %s, listening to %s:%s, will broadcast to %s"%(
-            port,self_ip,
+        log( "[WOLrelay-port%d] Listening to %s:%s, will broadcast to %s"%(
+            port,
             bindto,port,
             target,
         ) )
@@ -211,6 +210,7 @@ def main():
     client_send_amount = 40    
     # server defaults
     listenon = ''
+    listenon = '0.0.0.0'
     
     
     
