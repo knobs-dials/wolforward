@@ -1,8 +1,8 @@
 # wolforward
 
-A unicast-to-broadcast relay server for Wake-on-LAN packets
+A unicast-to-broadcast relay server for Wake-on-LAN packets.
 
-Also a unicast-or-local-broadcast WOL sender.
+Also a WOL-packet sender (unicast or local broadcast).
 
 
 Useful when you have  more than one thing to wake up,
