@@ -1,32 +1,27 @@
 # wolforward
 
-A unicast-to-broadcast relay server for Wake-on-LAN packets.
+Supports Wake-on-LAN when you have more than one target in a network.
 
-Also a WOL-packet sender (unicast or local broadcast).
+It can 
+- be a unicast-to-broadcast relay server for  packets
+- be a CLI wol-sending tool (unicast or local broadcast)
 
 
-Useful when you have  more than one thing to wake up,
-and a host that is always on (to run this service).
-
-The idea is that:
+The setup this supports:
 - you use an online WOL tool to send to your home IP (unicast)
 - your set your modem up to forward to this service (still unicast)
-- this service broadcasts it locally
+- this service broadcasts it locally (on its subnet)
 
 
 
 Install
 ===
-It's an independent script, and the defaults should work fine for most cases.
+It's an independent script relying only on python standard library. 
 
-Currently needs one argument, the pidfile. If you don't care specify /dev/null.
+You probably want to configure it as a service - it'll imply the rights to
+bind to privileged ports (7 and/or 9) and it'll start at boot time.
 
-Since it must bind to port 7 and/or 9 to be useful, you will need the rights for that.
-
-
-Upstart
-====
-You may well want to run it at boot.  My upstart script looks something like:
+My upstart script looks something like:
 
         description     "WOL forwarder"
         
@@ -38,12 +33,6 @@ You may well want to run it at boot.  My upstart script looks something like:
         
         console log
         
+        # Defaults should work fine for most cases.
         exec /usr/local/bin/wolforward /dev/null
-
-...the /dev/null because the pidfile argument is currently required, I'll remove that some time.
-
-
-TODO
-===
-* get the code py3 ready
-* use of pidfile should be an option rather than a requirement
+	# ...the /dev/null is the pidfile argument, I'll make that optional some time.
