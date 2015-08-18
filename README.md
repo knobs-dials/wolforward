@@ -7,9 +7,9 @@ It can
 - be a CLI wol-sending tool (unicast or local broadcast)
 
 
-The setup this supports:
-- you use an online WOL tool to send to your home IP (unicast)
-- your set your modem up to forward to this service (still unicast)
+The setup this was made for:
+- use an online WOL tool to send to your home IP (unicast)
+- model set up to forward port 7 and/or 9 to a single host with this service (still unicast)
 - this service broadcasts it locally (on its subnet)
 
 
@@ -35,4 +35,5 @@ My upstart script looks something like:
         
         # Defaults should work fine for most cases.
         exec /usr/local/bin/wolforward /dev/null
-	# ...the /dev/null is the pidfile argument, I'll make that optional some time.
+        # ...the /dev/null is the pidfile argument, I'll make that optional some time.
+
