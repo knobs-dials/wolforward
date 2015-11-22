@@ -8,18 +8,18 @@ It can
 
 
 The setup this was made for:
-- use an online WOL tool to send to your home IP (unicast)
-- model set up to forward port 7 and/or 9 to a single host with this service (still unicast)
+- using an online WOL tool to send to your home IP (unicast)
+- a modem orwarding port 7 and/or 9 to the single host with this service (still unicast)
 - this service broadcasts it locally (on its subnet)
 
 
 
 Install
 ===
-It's an independent script relying only on python standard library. 
+It's an independent script relying only on the python standard library. 
 
-You probably want to configure it as a service - it'll imply the rights to
-bind to privileged ports (7 and/or 9) and it'll start at boot time.
+You probably want to configure this as a service. Aside from convenience of starting at boot,
+it'll also imply the rights to bind to privileged ports (7 and/or 9).
 
 My upstart script looks something like:
 
