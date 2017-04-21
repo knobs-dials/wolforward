@@ -1,11 +1,14 @@
 # wolforward
 
-Wake-on-LAN when you have more than one target in a network.
+Wake-on-LAN when you have more than one target in a network, and your router won't allow port forwards to the broadcast address.
 
 Was made for the case where:
 - online WOL tool sends WOL packet to my home IP, i.e. modem, via unicast
 - modem forwards port 7 and/or 9 to the single host with this service (still unicast)
 - this service broadcasts it on the subnet it sits on
+
+(Note: In general this can be done by telling your modem to forward these ports 
+to your network's broadcast address, but there are a bunch that are too stupid to understand that)
 
 
 It can also be a standalone CLI wol-sending tool (unicast or local broadcast)
