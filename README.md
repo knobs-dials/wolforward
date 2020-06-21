@@ -8,7 +8,7 @@ but your modem won't allow port forwards to the broadcast address.
 Was made for the case where:
 - online WOL tool sends WOL packet to my home IP, i.e. modem, via unicast
 - modem forwards port 7 and/or 9 to the single host with this service (still unicast)
-- this service broadcasts the WoL packets itgets, on the subnet it sits on
+- this service broadcasts the WOL packets it gets, to the subnet it sits on
 
 
 
