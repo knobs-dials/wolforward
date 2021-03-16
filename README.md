@@ -38,21 +38,5 @@ Only uses the python standard library.
 
 You probably want to set it up as a service.
 Aside from convenience of starting at boot,
-it's also the easier way to bind to privileged ports (7 and/or 9).
-
-My upstart script looks something like:
-
-        description     "WOL forwarder"
-        
-        start on (local-filesystems and net-device-up)
-        stop on runlevel [!2345]
-        
-        respawn
-        respawn limit 10 5
-        
-        console log
-        
-        # Defaults should work fine for most cases.
-        exec /usr/local/bin/wolforward /dev/null
-        # ...the /dev/null is the pidfile argument, I'll make that optional some time.
+it's also the easier way to allow it to bind to privileged ports (7 and/or 9).
 
