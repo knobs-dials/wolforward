@@ -8,10 +8,10 @@ but your modem won't allow port forwards to the broadcast address (which is sens
 Was made for the case where:
 - online WOL tool sends WOL packet to my home IP, i.e. modem, via unicast
 - modem forwards port 7 and/or 9 to the single host with this service (still unicast)
-- this service broadcasts the WOL packets it gets, to the subnet it sits on
+- this service receives that, and broadcasts it on the subnet it sits on
 
 
-Can also be a standalone CLI wol-sending tool (unicast or local broadcast)
+Can also be a standalone CLI WOL-sending tool (unicast or local broadcast)
 
 
 Options
