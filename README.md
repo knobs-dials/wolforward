@@ -4,7 +4,7 @@ Wake-on-LAN unicast-to-broadcast relay.
 
 Made for a case where:
 - online WOL tool sends WOL packet to my home IP, i.e. modem, via unicast
-- modem forwards port 7 and/or 9 to the single host with this service (still unicast)
+- that modem forwards port 7 and/or 9 to the single host with this service (still unicast)
 - this service receives that, and broadcasts it on the subnet it sits on
 
 Useful when you have more than one host you want to wake up in a network,
