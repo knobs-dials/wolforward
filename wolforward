@@ -115,8 +115,8 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
     except KeyboardInterrupt:
         if threaded:
             #print "Relaying KeyboardInterrupt to main thread"    #probably rarely needed
-            import thread # make one appear in the main thread instead (am not entirely sure what cases this is for)
-            thread.interrupt_main()
+            import _thread # make one appear in the main thread instead (am not entirely sure what cases this is for)
+            _thread.interrupt_main()
 
 
 def packet_data_for(mac,passcode=''):
