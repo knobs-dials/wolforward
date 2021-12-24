@@ -2,17 +2,15 @@
 
 Wake-on-LAN unicast-to-broadcast relay.
 
-Useful when you have more than one host you want to wake up in a network,
-but your modem won't allow port forwards to the broadcast address.
-
-Was made for the case where:
+Made for a case where:
 - online WOL tool sends WOL packet to my home IP, i.e. modem, via unicast
-- modem forwards port 7 and/or 9 to the single host with this service (still unicast)
-- this service broadcasts the WoL packets itgets, on the subnet it sits on
+- that modem forwards port 7 and/or 9 to the single host with this service (still unicast)
+- this service receives that, and broadcasts it on the subnet it sits on
 
+Useful when you have more than one host you want to wake up in a network,
+but your modem (sensibly) won't allow port forwards to the broadcast address.
 
-
-Can also be a standalone CLI wol-sending tool (unicast or local broadcast)
+Can also be used as a standalone CLI WOL-sending tool (unicast or local broadcast)
 
 
 Options
@@ -39,21 +37,5 @@ Only uses the python standard library.
 
 You probably want to set it up as a service.
 Aside from convenience of starting at boot,
-it's also the easier way to bind to privileged ports (7 and/or 9).
-
-My upstart script looks something like:
-
-        description     "WOL forwarder"
-        
-        start on (local-filesystems and net-device-up)
-        stop on runlevel [!2345]
-        
-        respawn
-        respawn limit 10 5
-        
-        console log
-        
-        # Defaults should work fine for most cases.
-        exec /usr/local/bin/wolforward /dev/null
-        # ...the /dev/null is the pidfile argument, I'll make that optional some time.
+it's also the easier way to allow it to bind to privileged ports (7 and/or 9).
 
