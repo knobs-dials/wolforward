@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 ''' Takes all WOL packets, broadcasts locally. '''
 
 import os
@@ -6,10 +6,10 @@ import sys
 import socket
 import time
 import getopt
-import struct
 import re
 import syslog
 import datetime
+import codecs
 
 try:
     ourname = os.path.basename( sys.argv[0] )
@@ -34,7 +34,7 @@ def log(logstring,flush=True):
         if flush:
             sys.stderr.flush()
             
-
+                  
 def udp_relay_server(bindto='', port=9, target='<broadcast>',
                      max_packets=50, within_time_sec=1.5, ratelimit_sec=0.01):
     """ Receives UDP packets on a specific port, broadcasts their data in a new packet
@@ -56,13 +56,14 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
         try:
             recv_sock.bind( (bindto,port) )
         except Exception as e:
-            log( "[WOLrelay-port%d] Port %d in use, or no permission? -- %s"%(port,port,str(e)) )
+            log( "[wolforward_port%d] Port %d in use, or no permission? -- %s"%(port,port,str(e)) )
             return
+
 
         bcast_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         bcast_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        log( "[WOLrelay-port%d] Listening to %s:%s, will broadcast to %s"%(
+        log( "[wolforward_port%d] Listening to %s:%s, will broadcast to %s"%(
             port,
             bindto,port,
             target,
@@ -89,26 +90,27 @@ def udp_relay_server(bindto='', port=9, target='<broadcast>',
                 recent_packets[sender_ip].append(now)
 
             #remove items more than within_time_sec ago
-            current_timelist = filter( lambda tm: tm+within_time_sec>now, recent_packets[sender_ip] )
+            current_timelist = list(filter( lambda tm: tm+within_time_sec>now, recent_packets[sender_ip] ))
             recent_packets[sender_ip] = current_timelist
             #
             if len(current_timelist) > max_packets:
-                log( "[WOLrelay-port%d] more than %d packets from %s in %.1f sec -- ignoring this packet"%(port, max_packets,sender_ip,within_time_sec))
+                log( "[wolforward_port%d] more than %d packets from %s in %.1f sec -- ignoring this packet"%(port, max_packets,sender_ip,within_time_sec))
             else:
-                t=data.find('\xff\xff\xff\xff\xff\xff')
+                t=data.find(b'\xff\xff\xff\xff\xff\xff')
                 if t==-1:
-                    log( "[WOLrelay-port%d] Not a WOL packet?"%port )
+                    log( "[wolforward_port%d] Not a WOL packet? Not forwarding..."%port )
                 else:
-                    mac = data[t+6:t+12].encode('hex_codec')
-                    mac = ':'.join(list(mac[i:i+2].upper()  for i in range(0,len(mac),2)))
+                    mac = codecs.encode( data[t+6:t+12], 'hex_codec')
+                    mac = ':'.join(list( mac.decode('u8')[i:i+2].upper()  for i in range(0,len(mac),2)))
 
-                log( "[WOLrelay-port%d] Broadcasting WOL packet for %s, received from %s, to %s:%s"%(port,mac, sender_ip, target,port) )
-                bcast_sock.sendto(data, (target, port))
+                    log( "[wolforward_port%d] Broadcasting WOL packet for %s, received from %s, to %s:%s"%(
+                                       port,                             mac,       sender_ip, target,port) )
+                    bcast_sock.sendto(data, (target, port))
 
             time.sleep( ratelimit_sec )
             
         #if threaded:
-        #    print "\n[WOLrelay-port%d] stopping thread"%port
+        #    print "\n[wolforward_port%d] stopping thread"%port
             
     except KeyboardInterrupt:
         if threaded:
@@ -128,7 +130,7 @@ def packet_data_for(mac,passcode=''):
     # Make data in hex form (because it's easier to make this way), then turn into bytestring
     hex_data  = 'FF'*6              # sync bytes
     hex_data += mac*16 + passcode  # I vaguely remember having seen 26 copies.
-    packet_data = hex_data.decode('hex_codec')
+    packet_data = codecs.decode( hex_data, 'hex_codec')
     return packet_data
 
 
@@ -158,19 +160,16 @@ def send_wol_packets(mac, target='<broadcast>', ports=(7,9), howmany=40, unicast
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     else:
         print( "Unicast to %s"%target )
+
     if type(ports) is int:
         ports=[ports]
-    #print 'MAC:            %s'%mac
-    #print 'Data in hex:    '+repr(data)
-    #print 'Packet data:    '+repr(packetdata)
-    #print `packet_data`
+
     for port in ports: 
-        print( 'Sending %d WOL packets for MAC %s to port %d'%(howmany, mac, port) )
-        for dummy in xrange(howmany):
+        print( 'Sending %d WOL packets for MAC %s to %s port %d'%(howmany, mac, target, port) )
+        for dummy in range(howmany):
             sys.stdout.write('.')
             sys.stdout.flush()
-            sock.sendto(packet_data, (target, port))
-            #sock.sendto(packet_data, ('192.168.1.255', port))
+            ret = sock.sendto(packet_data, (target, port))
         print( ' done.\n' )
 
 
@@ -210,8 +209,10 @@ def main():
     client_send_amount = 40    
     # server defaults
     listenon = ''
-    listenon = '0.0.0.0'
+    listenon='0.0.0.0'
     
+
+        
     
     
     ### Argument parsing and obvious-problem checking ###
@@ -248,12 +249,15 @@ def main():
             act_as_client = True
             client_send_amount = int(a)
 
+        elif o == "-t":
+            target = a
+
 
     if act_as_client:
         try:
             send_wol_packets(client_mac, target=target, ports=ports, howmany=client_send_amount, unicast=client_unicast)
-        except ValueError, e:
-            print e
+        except ValueError as e:
+            print( e )
             sys.exit(-1)
         return
     
