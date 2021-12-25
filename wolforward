@@ -187,37 +187,33 @@ Use as client:     %s -m MAC [options]
    -p ports  port(s) to send to (comma-separated)   - default: -p 7,9
    -a        amount of packets to send              - default: 40
 
-Use as relay server:  %s [options] pidfile
-   -p ports  port(s) to listen to, comma-separated  e.g.  -p 9  or  -p 7,9,0    default: 7,9
+Use as relay server:  %s -s [options] 
+   -s        run as relay server
    -l IP     listen/bind address                    e.g.  -l 192.168.1.1        default: 0.0.0.0
-   -t IP     broadcast target address               e.g.  -t 192.168.1.255      default: halfway clever
-   -f        daemon mode (fork off)
-"""%(os.path.basename(sys.argv[0]),os.path.basename(sys.argv[0])))
+   -t IP     broadcast target address               e.g.  -t 192.168.1.255      default: halfway clever behaviour of library
+   -p ports  port(s) to listen to, comma-separated  e.g.  -p 9  or  -p 7,9,0    default: 7,9
+"""%(os.path.basename(sys.argv[0]),os.path.basename(sys.argv[0])) )
+#   -f        daemon mode (fork off)                 
+#   -P        pidfile               
 
     
 def main():
     ''' Invoked as a script '''
-    global stop_now,forkoff,verbose,threaded
+    global stop_now,verbose,threaded,forkoff
     
-    #defaults
-    ports  = [7,9]
-    target = '<broadcast>'
-    # client defaults
-    act_as_client      = False
+    listenon           = '0.0.0.0'      #  server
+    ports              = [7,9]          #  server+client
+    target             = '<broadcast>'  #  server+client
+    act_as             = None
     client_mac         = None
     client_unicast     = False
     client_send_amount = 40    
-    # server defaults
-    listenon = ''
-    listenon='0.0.0.0'
-    
 
-        
-    
+            
     
     ### Argument parsing and obvious-problem checking ###
     try:
-        optlist, args = getopt.getopt(sys.argv[1:], 'hfvp:b:l:m:ua:t:')
+        optlist, args = getopt.getopt(sys.argv[1:], 'hfvp:b:l:m:ua:t:s')
     except getopt.GetoptError as err:
         print( str(err) ) # will print something like "option -a not recognized"
         usage()
@@ -226,7 +222,7 @@ def main():
         if o == "-v":
             verbose = True
         elif o == "-p":
-            ports=list(int(e,10)  for e in a.split(','))
+            ports = list(int(e,10)  for e in a.split(','))
 
         #server related options
         elif o == "-f":
@@ -240,106 +236,115 @@ def main():
             sys.exit(0)
             
         elif o == "-m":
-            act_as_client = True
-            client_mac = a
+            act_as             = 'client'
+            client_mac         = a
         elif o == "-u":
-            act_as_client = True
-            client_unicast = True
+            act_as             = 'client'
+            client_unicast     = True
         elif o == "-a":
-            act_as_client = True
+            act_as             = 'client'
             client_send_amount = int(a)
 
         elif o == "-t":
             target = a
 
+        elif o == "-s":
+            act_as = 'server' 
 
-    if act_as_client:
+
+    if act_as == 'client':
         try:
             send_wol_packets(client_mac, target=target, ports=ports, howmany=client_send_amount, unicast=client_unicast)
         except ValueError as e:
             print( e )
             sys.exit(-1)
         return
-    
-    if len(args)<1:
-        print( "\nError: Need more arguments:\n   at least -m when used as a client,\n   at least pidfile when used as a server\n" )
-        usage()
-        sys.exit(1)
 
-    pidfilename = args[0]
-    pidfilename = os.path.realpath(pidfilename)
-    try:
-        pidfile = open(pidfilename,'w')
-    except Exception as e:
-        print( "PIDfile %s not writable (%s)"%(pidfilename,str(e)) )
-        sys.exit(1)
+    elif act_as == 'server':
 
-
-    ### double-fork if required ###
-    if forkoff:
-        try: 
-            pid = os.fork() 
-            if pid > 0:
-                sys.exit(0) # exit first parent
-
-        except OSError as e: 
-            sys.stderr.write( "fork failed: %d (%s)" % (e.errno, e.strerror) )
-            sys.exit(1)
-
-        # decouple from parent env
-        os.chdir("/") # don't occupy the cwd we started in 
-        os.setsid()   # dissociate from initially controlling terminal
-        os.umask(0)   # just to set it to a known value
-
-        # do second fork to make sure we can't accidentally acquire a controlling terminal
-        try: 
-            pid = os.fork() 
-            if pid > 0:
-                sys.exit(0) # exit second parent
-        except OSError as e: 
-            sys.stderr.write( "second fork failed: %d (%s)" % (e.errno, e.strerror) )
-            sys.exit(1) 
-
-    ### write pidfile ###
-    daemonpid = os.getpid()
-    pidfile.write('%s\n'%daemonpid)
-    pidfile.close()
-    
-
-    ### Start service ###
-
-    #port should be int or list of ints
-    if type(ports) in (tuple,list) and len(ports)==1: # length-one list becomes the integer it (hopefully) contains
-        ports = ports[0]
-
-    
-    if type(ports) not in (tuple,list): # Single port, not threading
-        threaded = False        
-        udp_relay_server(bindto=listenon, port=ports,target=target)
-
-    else: # Multiple ports requested, creating thread for each.
-        threaded = True
-        import threading
-
-        fired_threads=[]
-        for port in ports:
-            #print "Firing off relay server for port %d"%port
-            thr = threading.Thread(target=udp_relay_server,
-                                   kwargs={'bindto':listenon, 'port':port, 'target':target})
-            thr.start()
-            fired_threads.append( thr )
-                        
-        while len(fired_threads)>0:           
+        #     TODO: think about whether you would fork without a pidfile
+        # CONSIDER: just removing this fork/pidfile stuff altogether
+        if False:#pidfilename!=None:
+            pidfilename = args[0]
+            pidfilename = os.path.realpath(pidfilename)
             try:
-                for th in fired_threads:
-                    th.join(0.2)
-                    if not th.is_alive():
-                        fired_threads.remove(th)
-            except KeyboardInterrupt:
-                log( "    Ctrl-C received, waiting for threads to finish... " )
-                stop_now = True
-        log("Exiting.") 
-    sys.exit(0)
+                pidfile = open(pidfilename,'w')
+            except Exception as e:
+                print( "PIDfile %s not writable (%s)"%(pidfilename,str(e)) )
+                sys.exit(1)
+
+            ### double-fork if required ###
+            if forkoff:
+                try: 
+                    pid = os.fork() 
+                    if pid > 0:
+                        sys.exit(0) # exit first parent
+
+                except OSError as e: 
+                    sys.stderr.write( "fork failed: %d (%s)" % (e.errno, e.strerror) )
+                    sys.exit(1)
+
+                # decouple from parent env
+                os.chdir("/") # don't occupy the cwd we started in 
+                os.setsid()   # dissociate from initially controlling terminal
+                os.umask(0)   # just to set it to a known value
+
+                # do second fork to make sure we can't accidentally acquire a controlling terminal
+                try: 
+                    pid = os.fork() 
+                    if pid > 0:
+                        sys.exit(0) # exit second parent
+                except OSError as e: 
+                    sys.stderr.write( "second fork failed: %d (%s)" % (e.errno, e.strerror) )
+                    sys.exit(1) 
+
+            ### write pidfile ###
+            daemonpid = os.getpid()
+            pidfile.write('%s\n'%daemonpid)
+            pidfile.close()
+            
+
+        ### Actual service ###
+        #port should be int or list of ints
+        if type(ports) in (tuple,list) and len(ports)==1: # length-one list becomes the integer it (hopefully) contains
+            ports = ports[0]
+
+        if type(ports) not in (tuple,list): # Single port, can avoid threading
+            threaded = False
+            udp_relay_server(bindto=listenon, port=ports,target=target)
+
+        else: # Multiple ports requested, creating thread for each.
+            threaded = True
+            import threading
+
+            fired_threads=[]
+            for port in ports:
+                #print "Firing off relay server for port %d"%port
+                thr = threading.Thread(target=udp_relay_server,
+                                    kwargs={'bindto':listenon, 'port':port, 'target':target})
+                thr.start()
+                fired_threads.append( thr )
+                            
+            while len(fired_threads)>0:           
+                try:
+                    for th in fired_threads:
+                        th.join(0.2)
+                        if not th.is_alive():
+                            fired_threads.remove(th)
+                except KeyboardInterrupt:
+                    log( "    Ctrl-C received, waiting for threads to finish... " )
+                    stop_now = True
+            log("Exiting.")
+        
+        sys.exit(0)
+
+    else:
+        usage()
+        
+        print( "\nERROR: Need more arguments:\n   at least -m when used as a client,\n   at least -s when used as a server\n" )
+
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
