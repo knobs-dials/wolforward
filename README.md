@@ -16,24 +16,27 @@ Can also be used as a standalone CLI WOL-sending tool (unicast or local broadcas
 Options
 ===
 ```
-
-Use as relay server:  wolforward [options] pidfile
-   -l IP     listen/bind address                    e.g.  -l 192.168.1.1        default: 0.0.0.0
-   -t IP     broadcast target address               e.g.  -t 192.168.1.255      default: halfway clever
-   -f        daemon mode (fork off)
-   -p ports  port(s) to listen to, comma-separated  e.g.  -p 9  or  -p 7,9,0    default: 7,9
+UDP/IP Wake on Lan utility
+   -h        print this help, exit
+   -v        be more verbose
 
 Use as client:     wolforward -m MAC [options]
-   -m MAC    MAC address of target                  - required. Will ignore separator characters
-   -t IP     IP to send to                          - default is local broadcast. Specify this for unicast elsewhere.
-   -a        amount of packets to send              - default: 40
+   -m MAC    MAC address of target                  - required.  We'll ignore any separator characters in it
+   -t IP     IP to send to                          - act as unicast; without this we default to local broadcast
    -p ports  port(s) to send to (comma-separated)   - default: -p 7,9
+   -a        amount of packets to send              - default: 40
+
+Use as relay server:  wolforward -s [options]
+   -s        run as relay server
+   -l IP     listen/bind address                    e.g.  -l 192.168.1.1        default: 0.0.0.0
+   -t IP     broadcast target address               e.g.  -t 192.168.1.255      default: halfway clever behaviour of library
+   -p ports  port(s) to listen to, comma-separated  e.g.  -p 9  or  -p 7,9,0    default: 7,9
 ```
 
 
 Install
 ===
-Only uses the python standard library.
+No dependencies, uses only the python standard library.
 
 You probably want to set it up as a service.
 Aside from convenience of starting at boot,
