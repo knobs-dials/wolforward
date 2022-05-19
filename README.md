@@ -10,7 +10,20 @@ Made for a case where:
 Useful when you have more than one host you want to wake up in a network,
 but your modem (sensibly) won't allow port forwards to the broadcast address.
 
-Can also be used as a standalone CLI WOL-sending tool (unicast or local broadcast)
+
+Use
+===
+Relay server, as described above
+
+      wolforward -s
+
+Standalone CLI WOL-sending tool - unicast
+
+      wolforward -m 001122334455 -t 192.168.178.222
+
+Standalone CLI WOL-sending tool - broadcast
+
+      wolforward -m 001122334455
 
 
 Options
