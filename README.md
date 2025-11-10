@@ -9,7 +9,7 @@ Made for a case where:
 
 
 Useful when you have more than one host you want to wake up in a network,
-but your modem (sensibly) won't allow port forwards to the broadcast address which is, uh, _sensible_.
+but your modem won't port-forward ports to the broadcast address which is, uh, _sensible_.
 
 
 Use
